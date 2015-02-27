@@ -56,6 +56,16 @@ func (s *Set) List() []interface{} {
 	return result
 }
 
+func (s *Set) MapByKey(key string) map[string]interface{} {
+	result := make(map[string]interface{})
+	for _, rawData := range s.List() {
+		data := rawData.(map[string]interface{})
+		result[data[key].(string)] = data
+	}
+
+	return result
+}
+
 // Differences performs a set difference of the two sets, returning
 // a new third set that has only the elements unique to this set.
 func (s *Set) Difference(other *Set) *Set {
