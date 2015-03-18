@@ -190,14 +190,13 @@ resource "cloudstack_network_acl_rule" "foo" {
   aclid = "${cloudstack_network_acl.foo.id}"
 
   rule {
-	  action = "allow"
     source_cidr = "172.16.100.0/24"
     protocol = "tcp"
     ports = ["80", "443"]
     traffic_type = "ingress"
   }
 }`,
-	CLOUDSTACK_VPC_CIDR,
+	CLOUDSTACK_VPC_CIDR_1,
 	CLOUDSTACK_VPC_OFFERING,
 	CLOUDSTACK_ZONE)
 
@@ -234,6 +233,6 @@ resource "cloudstack_network_acl_rule" "foo" {
     traffic_type = "egress"
   }
 }`,
-	CLOUDSTACK_VPC_CIDR,
+	CLOUDSTACK_VPC_CIDR_1,
 	CLOUDSTACK_VPC_OFFERING,
 	CLOUDSTACK_ZONE)

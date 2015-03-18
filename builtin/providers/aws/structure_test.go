@@ -5,12 +5,12 @@ import (
 	"testing"
 
 	"github.com/hashicorp/aws-sdk-go/aws"
+	ec2 "github.com/hashicorp/aws-sdk-go/gen/ec2"
+	"github.com/hashicorp/aws-sdk-go/gen/elb"
 	"github.com/hashicorp/aws-sdk-go/gen/rds"
 	"github.com/hashicorp/terraform/flatmap"
 	"github.com/hashicorp/terraform/helper/hashcode"
 	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/mitchellh/goamz/ec2"
-	"github.com/mitchellh/goamz/elb"
 )
 
 // Returns test configuration
@@ -36,7 +36,7 @@ func testConf() map[string]string {
 	}
 }
 
-func Test_expandIPPerms(t *testing.T) {
+func TestExpandIPPerms(t *testing.T) {
 	hash := func(v interface{}) int {
 		return hashcode.String(v.(string))
 	}
@@ -59,125 +59,140 @@ func Test_expandIPPerms(t *testing.T) {
 			"self":      true,
 		},
 	}
-	perms := expandIPPerms("foo", expanded)
+	group := ec2.SecurityGroup{
+		GroupID: aws.String("foo"),
+		VPCID:   aws.String("bar"),
+	}
+	perms := expandIPPerms(group, expanded)
 
-	expected := []ec2.IPPerm{
-		ec2.IPPerm{
-			Protocol:  "icmp",
-			FromPort:  1,
-			ToPort:    -1,
-			SourceIPs: []string{"0.0.0.0/0"},
-			SourceGroups: []ec2.UserSecurityGroup{
-				ec2.UserSecurityGroup{
-					OwnerId: "foo",
-					Id:      "sg-22222",
+	expected := []ec2.IPPermission{
+		ec2.IPPermission{
+			IPProtocol: aws.String("icmp"),
+			FromPort:   aws.Integer(1),
+			ToPort:     aws.Integer(-1),
+			IPRanges:   []ec2.IPRange{ec2.IPRange{aws.String("0.0.0.0/0")}},
+			UserIDGroupPairs: []ec2.UserIDGroupPair{
+				ec2.UserIDGroupPair{
+					UserID:  aws.String("foo"),
+					GroupID: aws.String("sg-22222"),
 				},
-				ec2.UserSecurityGroup{
-					Id: "sg-11111",
+				ec2.UserIDGroupPair{
+					GroupID: aws.String("sg-22222"),
 				},
 			},
 		},
-		ec2.IPPerm{
-			Protocol: "icmp",
-			FromPort: 1,
-			ToPort:   -1,
-			SourceGroups: []ec2.UserSecurityGroup{
-				ec2.UserSecurityGroup{
-					Id: "foo",
+		ec2.IPPermission{
+			IPProtocol: aws.String("icmp"),
+			FromPort:   aws.Integer(1),
+			ToPort:     aws.Integer(-1),
+			UserIDGroupPairs: []ec2.UserIDGroupPair{
+				ec2.UserIDGroupPair{
+					UserID: aws.String("foo"),
 				},
 			},
 		},
 	}
 
-	if !reflect.DeepEqual(perms, expected) {
+	exp := expected[0]
+	perm := perms[0]
+
+	if *exp.FromPort != *perm.FromPort {
 		t.Fatalf(
 			"Got:\n\n%#v\n\nExpected:\n\n%#v\n",
-			perms[0],
-			expected)
+			*perm.FromPort,
+			*exp.FromPort)
+	}
+
+	if *exp.IPRanges[0].CIDRIP != *perm.IPRanges[0].CIDRIP {
+		t.Fatalf(
+			"Got:\n\n%#v\n\nExpected:\n\n%#v\n",
+			*perm.IPRanges[0].CIDRIP,
+			*exp.IPRanges[0].CIDRIP)
+	}
+
+	if *exp.UserIDGroupPairs[0].UserID != *perm.UserIDGroupPairs[0].UserID {
+		t.Fatalf(
+			"Got:\n\n%#v\n\nExpected:\n\n%#v\n",
+			*perm.UserIDGroupPairs[0].UserID,
+			*exp.UserIDGroupPairs[0].UserID)
 	}
 
 }
 
-func Test_flattenIPPerms(t *testing.T) {
-	cases := []struct {
-		Input  []ec2.IPPerm
-		Output []map[string]interface{}
-	}{
-		{
-			Input: []ec2.IPPerm{
-				ec2.IPPerm{
-					Protocol:  "icmp",
-					FromPort:  1,
-					ToPort:    -1,
-					SourceIPs: []string{"0.0.0.0/0"},
-					SourceGroups: []ec2.UserSecurityGroup{
-						ec2.UserSecurityGroup{
-							Id: "sg-11111",
-						},
-					},
-				},
-			},
+func TestExpandIPPerms_nonVPC(t *testing.T) {
+	hash := func(v interface{}) int {
+		return hashcode.String(v.(string))
+	}
 
-			Output: []map[string]interface{}{
-				map[string]interface{}{
-					"protocol":        "icmp",
-					"from_port":       1,
-					"to_port":         -1,
-					"cidr_blocks":     []string{"0.0.0.0/0"},
-					"security_groups": []string{"sg-11111"},
+	expanded := []interface{}{
+		map[string]interface{}{
+			"protocol":    "icmp",
+			"from_port":   1,
+			"to_port":     -1,
+			"cidr_blocks": []interface{}{"0.0.0.0/0"},
+			"security_groups": schema.NewSet(hash, []interface{}{
+				"sg-11111",
+				"foo/sg-22222",
+			}),
+		},
+		map[string]interface{}{
+			"protocol":  "icmp",
+			"from_port": 1,
+			"to_port":   -1,
+			"self":      true,
+		},
+	}
+	group := ec2.SecurityGroup{
+		GroupName: aws.String("foo"),
+	}
+	perms := expandIPPerms(group, expanded)
+
+	expected := []ec2.IPPermission{
+		ec2.IPPermission{
+			IPProtocol: aws.String("icmp"),
+			FromPort:   aws.Integer(1),
+			ToPort:     aws.Integer(-1),
+			IPRanges:   []ec2.IPRange{ec2.IPRange{aws.String("0.0.0.0/0")}},
+			UserIDGroupPairs: []ec2.UserIDGroupPair{
+				ec2.UserIDGroupPair{
+					GroupName: aws.String("sg-22222"),
+				},
+				ec2.UserIDGroupPair{
+					GroupName: aws.String("sg-22222"),
 				},
 			},
 		},
-
-		{
-			Input: []ec2.IPPerm{
-				ec2.IPPerm{
-					Protocol:     "icmp",
-					FromPort:     1,
-					ToPort:       -1,
-					SourceIPs:    []string{"0.0.0.0/0"},
-					SourceGroups: nil,
-				},
-			},
-
-			Output: []map[string]interface{}{
-				map[string]interface{}{
-					"protocol":    "icmp",
-					"from_port":   1,
-					"to_port":     -1,
-					"cidr_blocks": []string{"0.0.0.0/0"},
-				},
-			},
-		},
-		{
-			Input: []ec2.IPPerm{
-				ec2.IPPerm{
-					Protocol:  "icmp",
-					FromPort:  1,
-					ToPort:    -1,
-					SourceIPs: nil,
-				},
-			},
-
-			Output: []map[string]interface{}{
-				map[string]interface{}{
-					"protocol":  "icmp",
-					"from_port": 1,
-					"to_port":   -1,
+		ec2.IPPermission{
+			IPProtocol: aws.String("icmp"),
+			FromPort:   aws.Integer(1),
+			ToPort:     aws.Integer(-1),
+			UserIDGroupPairs: []ec2.UserIDGroupPair{
+				ec2.UserIDGroupPair{
+					GroupName: aws.String("foo"),
 				},
 			},
 		},
 	}
 
-	for _, tc := range cases {
-		output := flattenIPPerms(tc.Input)
-		if !reflect.DeepEqual(output, tc.Output) {
-			t.Fatalf("Input:\n\n%#v\n\nOutput:\n\n%#v", tc.Input, output)
-		}
+	exp := expected[0]
+	perm := perms[0]
+
+	if *exp.FromPort != *perm.FromPort {
+		t.Fatalf(
+			"Got:\n\n%#v\n\nExpected:\n\n%#v\n",
+			*perm.FromPort,
+			*exp.FromPort)
+	}
+
+	if *exp.IPRanges[0].CIDRIP != *perm.IPRanges[0].CIDRIP {
+		t.Fatalf(
+			"Got:\n\n%#v\n\nExpected:\n\n%#v\n",
+			*perm.IPRanges[0].CIDRIP,
+			*exp.IPRanges[0].CIDRIP)
 	}
 }
 
-func Test_expandListeners(t *testing.T) {
+func TestExpandListeners(t *testing.T) {
 	expanded := []interface{}{
 		map[string]interface{}{
 			"instance_port":     8000,
@@ -192,10 +207,10 @@ func Test_expandListeners(t *testing.T) {
 	}
 
 	expected := elb.Listener{
-		InstancePort:     8000,
-		LoadBalancerPort: 80,
-		InstanceProtocol: "http",
-		Protocol:         "http",
+		InstancePort:     aws.Integer(8000),
+		LoadBalancerPort: aws.Integer(80),
+		InstanceProtocol: aws.String("http"),
+		Protocol:         aws.String("http"),
 	}
 
 	if !reflect.DeepEqual(listeners[0], expected) {
@@ -207,18 +222,18 @@ func Test_expandListeners(t *testing.T) {
 
 }
 
-func Test_flattenHealthCheck(t *testing.T) {
+func TestFlattenHealthCheck(t *testing.T) {
 	cases := []struct {
 		Input  elb.HealthCheck
 		Output []map[string]interface{}
 	}{
 		{
 			Input: elb.HealthCheck{
-				UnhealthyThreshold: 10,
-				HealthyThreshold:   10,
-				Target:             "HTTP:80/",
-				Timeout:            30,
-				Interval:           30,
+				UnhealthyThreshold: aws.Integer(10),
+				HealthyThreshold:   aws.Integer(10),
+				Target:             aws.String("HTTP:80/"),
+				Timeout:            aws.Integer(30),
+				Interval:           aws.Integer(30),
 			},
 			Output: []map[string]interface{}{
 				map[string]interface{}{
@@ -233,14 +248,14 @@ func Test_flattenHealthCheck(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		output := flattenHealthCheck(tc.Input)
+		output := flattenHealthCheck(&tc.Input)
 		if !reflect.DeepEqual(output, tc.Output) {
 			t.Fatalf("Got:\n\n%#v\n\nExpected:\n\n%#v", output, tc.Output)
 		}
 	}
 }
 
-func Test_expandStringList(t *testing.T) {
+func TestExpandStringList(t *testing.T) {
 	expanded := flatmap.Expand(testConf(), "availability_zones").([]interface{})
 	stringList := expandStringList(expanded)
 	expected := []string{
@@ -257,7 +272,7 @@ func Test_expandStringList(t *testing.T) {
 
 }
 
-func Test_expandParameters(t *testing.T) {
+func TestExpandParameters(t *testing.T) {
 	expanded := []interface{}{
 		map[string]interface{}{
 			"name":         "character_set_client",
@@ -284,7 +299,7 @@ func Test_expandParameters(t *testing.T) {
 	}
 }
 
-func Test_flattenParameters(t *testing.T) {
+func TestFlattenParameters(t *testing.T) {
 	cases := []struct {
 		Input  []rds.Parameter
 		Output []map[string]interface{}
@@ -310,5 +325,24 @@ func Test_flattenParameters(t *testing.T) {
 		if !reflect.DeepEqual(output, tc.Output) {
 			t.Fatalf("Got:\n\n%#v\n\nExpected:\n\n%#v", output, tc.Output)
 		}
+	}
+}
+
+func TestExpandInstanceString(t *testing.T) {
+
+	expected := []elb.Instance{
+		elb.Instance{aws.String("test-one")},
+		elb.Instance{aws.String("test-two")},
+	}
+
+	ids := []interface{}{
+		"test-one",
+		"test-two",
+	}
+
+	expanded := expandInstanceString(ids)
+
+	if !reflect.DeepEqual(expanded, expected) {
+		t.Fatalf("Expand Instance String output did not match.\nGot:\n%#v\n\nexpected:\n%#v", expanded, expected)
 	}
 }

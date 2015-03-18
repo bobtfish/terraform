@@ -50,6 +50,12 @@ func resourceAwsDbInstance() *schema.Resource {
 				ForceNew: true,
 			},
 
+			"storage_encrypted": &schema.Schema{
+				Type:     schema.TypeBool,
+				Optional: true,
+				ForceNew: true,
+			},
+
 			"allocated_storage": &schema.Schema{
 				Type:     schema.TypeInt,
 				Required: true,
@@ -150,7 +156,6 @@ func resourceAwsDbInstance() *schema.Resource {
 			"final_snapshot_identifier": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				ForceNew: true,
 			},
 
 			"db_subnet_group_name": &schema.Schema{
@@ -195,6 +200,7 @@ func resourceAwsDbInstanceCreate(d *schema.ResourceData, meta interface{}) error
 		MasterUserPassword:   aws.String(d.Get("password").(string)),
 		Engine:               aws.String(d.Get("engine").(string)),
 		EngineVersion:        aws.String(d.Get("engine_version").(string)),
+		StorageEncrypted:     aws.Boolean(d.Get("storage_encrypted").(bool)),
 	}
 
 	if attr, ok := d.GetOk("storage_type"); ok {
@@ -317,9 +323,10 @@ func resourceAwsDbInstanceRead(d *schema.ResourceData, meta interface{}) error {
 		d.Set("parameter_group_name", *v.DBParameterGroups[0].DBParameterGroupName)
 	}
 
-	d.Set("address", *v.Endpoint.Port)
+	d.Set("address", *v.Endpoint.Address)
 	d.Set("endpoint", fmt.Sprintf("%s:%d", *v.Endpoint.Address, *v.Endpoint.Port))
 	d.Set("status", *v.DBInstanceStatus)
+	d.Set("storage_encrypted", *v.StorageEncrypted)
 
 	// Create an empty schema.Set to hold all vpc security group ids
 	ids := &schema.Set{

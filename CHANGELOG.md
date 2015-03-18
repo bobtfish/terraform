@@ -1,24 +1,40 @@
 ## 0.4.0 (unreleased)
 
+BACKWARDS INCOMPATIBILITIES:
+
+  * Commands `terraform push` and `terraform pull` are now nested under
+    the `remote` command: `terraform remote push` and `terraform remote pull`.
+    The old `remote` functionality is now at `terraform remote config`. This
+    consolidates all remote state management under one command.
+
 FEATURES:
 
+  * **New provider: `dme` (DNSMadeEasy)** [GH-855]
+  * **New command: `taint`** - Manually mark a resource as tainted, causing
+      a destroy and recreate on the next plan/apply.
   * **Self-variables** can be used to reference the current resource's
       attributes within a provisioner. Ex. `${self.private_ip_address}` [GH-1033]
   * **Continous state** saving during `terraform apply`. The state file is
       continously updated as apply is running, meaning that the state is
       less likely to become corrupt in a catastrophic case: terraform panic
       or system killing Terraform.
-  * **New provider: `dme` (DNSMadeEasy)** [GH-855]
-  * **New command: `taint`** - Manually mark a resource as tainted, causing
-      a destroy and recreate on the next plan/apply.
+  * **Math operations** in interpolations. You can now do things like
+      `${count.index+1}`. [GH-1068]
 
 IMPROVEMENTS:
 
+  * **New config function: `format`** - Format a string using `sprintf`
+      format. [GH-1096]
+  * **New config function: `replace`** - Search and replace string values.
+      Search can be a regular expression. See documentation for more
+      info. [GH-1029]
   * **New config function: `split`** - Split a value based on a delimiter.
       This is useful for faking lists as parameters to modules.
+  * **New resource: `digitalocean_ssh_key`** [GH-1074]
   * core: The serial of the state is only updated if there is an actual
       change. This will lower the amount of state changing on things
       like refresh.
+  * core: Autoload `terraform.tfvars.json` as well as `terraform.tfvars` [GH-1030]
 
 BUG FIXES:
 
@@ -27,11 +43,22 @@ BUG FIXES:
       provisioners. [GH-795][GH-868]
   * core: Validate that `depends_on` doesn't contain interpolations. [GH-1015]
   * core: Module inputs can be non-strings. [GH-819]
+  * core: Fix invalid plan that resulted in "diffs don't match" error when
+      a computed attribute was used as part of a set parameter. [GH-1073]
+  * core: Fix edge case where state containing both "resource" and
+      "resource.0" would ignore the latter completely. [GH-1086]
   * providers/aws: manually deleted VPC removes it from the state
   * providers/aws: `source_dest_check` regression fixed (now works). [GH-1020]
+  * providers/aws: Longer wait times for DB instances.
+  * providers/aws: Longer wait times for route53 records (30 mins). [GH-1164]
   * providers/digitalocean: Waits until droplet is ready to be destroyed [GH-1057]
   * providers/digitalocean: More lenient about 404's while waiting [GH-1062]
-  * providers/aws: Longer wait times for DB instances
+  * providers/google: Network data in state was not being stored. [GH-1095]
+
+PLUGIN CHANGES:
+
+  * New `helper/schema` fields for resources: `Deprecated` and `Removed` allow
+      plugins to generate warning or error messages when a given attribute is used.
 
 ## 0.3.7 (February 19, 2015)
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -15,11 +16,16 @@ var Funcs map[string]ast.Function
 
 func init() {
 	Funcs = map[string]ast.Function{
-		"concat":  interpolationFuncConcat(),
 		"file":    interpolationFuncFile(),
+		"format":  interpolationFuncFormat(),
 		"join":    interpolationFuncJoin(),
 		"element": interpolationFuncElement(),
+		"replace": interpolationFuncReplace(),
 		"split":   interpolationFuncSplit(),
+
+		// Concat is a little useless now since we supported embeddded
+		// interpolations but we keep it around for backwards compat reasons.
+		"concat": interpolationFuncConcat(),
 	}
 }
 
@@ -61,6 +67,21 @@ func interpolationFuncFile() ast.Function {
 	}
 }
 
+// interpolationFuncFormat implements the "replace" function that does
+// string replacement.
+func interpolationFuncFormat() ast.Function {
+	return ast.Function{
+		ArgTypes:     []ast.Type{ast.TypeString},
+		Variadic:     true,
+		VariadicType: ast.TypeAny,
+		ReturnType:   ast.TypeString,
+		Callback: func(args []interface{}) (interface{}, error) {
+			format := args[0].(string)
+			return fmt.Sprintf(format, args[1:]...), nil
+		},
+	}
+}
+
 // interpolationFuncJoin implements the "join" function that allows
 // multi-variable values to be joined by some character.
 func interpolationFuncJoin() ast.Function {
@@ -75,6 +96,33 @@ func interpolationFuncJoin() ast.Function {
 			}
 
 			return strings.Join(list, args[0].(string)), nil
+		},
+	}
+}
+
+// interpolationFuncReplace implements the "replace" function that does
+// string replacement.
+func interpolationFuncReplace() ast.Function {
+	return ast.Function{
+		ArgTypes:   []ast.Type{ast.TypeString, ast.TypeString, ast.TypeString},
+		ReturnType: ast.TypeString,
+		Callback: func(args []interface{}) (interface{}, error) {
+			s := args[0].(string)
+			search := args[1].(string)
+			replace := args[2].(string)
+
+			// We search/replace using a regexp if the string is surrounded
+			// in forward slashes.
+			if len(search) > 1 && search[0] == '/' && search[len(search)-1] == '/' {
+				re, err := regexp.Compile(search[1 : len(search)-1])
+				if err != nil {
+					return nil, err
+				}
+
+				return re.ReplaceAllString(s, replace), nil
+			}
+
+			return strings.Replace(s, search, replace, -1), nil
 		},
 	}
 }

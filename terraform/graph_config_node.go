@@ -293,24 +293,16 @@ func (n *GraphNodeConfigResource) DynamicExpand(ctx EvalContext) (*Graph, error)
 			View:  n.Resource.Id(),
 		})
 
-		if n.Resource.Lifecycle.CreateBeforeDestroy {
-			// If we're only destroying tainted resources, then we only
-			// want to find tainted resources and destroy them here.
-			steps = append(steps, &TaintedTransformer{
-				State:          state,
-				View:           n.Resource.Id(),
-				Deposed:        n.Resource.Lifecycle.CreateBeforeDestroy,
-				DeposedInclude: true,
-			})
-		}
+		steps = append(steps, &DeposedTransformer{
+			State: state,
+			View:  n.Resource.Id(),
+		})
 	case DestroyTainted:
 		// If we're only destroying tainted resources, then we only
 		// want to find tainted resources and destroy them here.
 		steps = append(steps, &TaintedTransformer{
-			State:          state,
-			View:           n.Resource.Id(),
-			Deposed:        n.Resource.Lifecycle.CreateBeforeDestroy,
-			DeposedInclude: false,
+			State: state,
+			View:  n.Resource.Id(),
 		})
 	}
 
@@ -480,6 +472,14 @@ func (n *graphNodeResourceDestroy) DestroyInclude(d *ModuleDiff, s *ModuleState)
 			if v.Primary != nil {
 				return true
 			}
+		}
+
+		// If we're in the state as _both_ "foo" and "foo.0", then
+		// keep it, since we treat the latter as an orphan.
+		_, okOne := s.Resources[prefix]
+		_, okTwo := s.Resources[prefix+".0"]
+		if okOne && okTwo {
+			return true
 		}
 	}
 
