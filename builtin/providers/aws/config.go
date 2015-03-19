@@ -3,8 +3,7 @@ package aws
 import (
 	"fmt"
 	"log"
-
-	"github.com/hashicorp/terraform/helper/multierror"
+	"time"
 
 	"github.com/hashicorp/aws-sdk-go/aws"
 	"github.com/hashicorp/aws-sdk-go/gen/autoscaling"
@@ -13,13 +12,17 @@ import (
 	"github.com/hashicorp/aws-sdk-go/gen/rds"
 	"github.com/hashicorp/aws-sdk-go/gen/route53"
 	"github.com/hashicorp/aws-sdk-go/gen/s3"
+	"github.com/hashicorp/terraform/helper/multierror"
 )
 
 type Config struct {
-	AccessKey string
-	SecretKey string
-	Token     string
-	Region    string
+	AccessKey              string
+	SecretKey              string
+	Token                  string
+	CredentialsFilePath    string
+	CredentialsFileProfile string
+	Region                 string
+	Provider               aws.CredentialsProvider
 }
 
 type AWSClient struct {
@@ -30,6 +33,39 @@ type AWSClient struct {
 	r53conn         *route53.Route53
 	region          string
 	rdsconn         *rds.RDS
+}
+
+func (c *Config) loadAndValidate(providerCode string) (interface{}, error) {
+	credsProvider, err := c.getCredsProvider(providerCode)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := credsProvider.Credentials(); err != nil {
+		return nil, err
+	}
+
+	c.Provider = credsProvider
+
+	return c.Client()
+}
+
+func (c *Config) getCredsProvider(providerCode string) (aws.CredentialsProvider, error) {
+	if providerCode == "static" {
+		return aws.Creds(c.AccessKey, c.SecretKey, c.Token), nil
+	} else if providerCode == "iam" {
+		return aws.IAMCreds(), nil
+	} else if providerCode == "env" {
+		return aws.EnvCreds()
+	} else if providerCode == "file" {
+		// TODO: Could be a variable but there's no standardized name for it
+		// More importantly, what is really the point of this variable??
+		expiry := 10 * time.Minute
+
+		return aws.ProfileCreds(
+			c.CredentialsFilePath, c.CredentialsFileProfile, expiry)
+	}
+	return aws.DetectCreds(c.AccessKey, c.SecretKey, c.Token), nil
 }
 
 // Client configures and returns a fully initailized AWSClient
@@ -50,9 +86,7 @@ func (c *Config) Client() (interface{}, error) {
 		// store AWS region in client struct, for region specific operations such as
 		// bucket storage in S3
 		client.region = c.Region
-
-		log.Println("[INFO] Building AWS auth structure")
-		credsProvider := aws.Creds(c.AccessKey, c.SecretKey, c.Token)
+		credsProvider := c.Provider
 
 		log.Println("[INFO] Initializing ELB connection")
 		client.elbconn = elb.New(credsProvider, c.Region, nil)
