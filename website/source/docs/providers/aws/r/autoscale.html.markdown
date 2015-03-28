@@ -32,6 +32,7 @@ resource "aws_autoscaling_group" "bar" {
   tag {
     key = "lorem"
     value = "ipsum"
+    propagate_at_launch = false
   }
 }
 ```
@@ -60,7 +61,7 @@ Tags support the following:
 
 * `key` - (Required) Key
 * `value` - (Required) Value
-* `propagate_at_launch` - (Optional) Enables propagation of the tag to
+* `propagate_at_launch` - (Required) Enables propagation of the tag to
    Amazon EC2 instances launched via this ASG
 
 ## Attributes Reference

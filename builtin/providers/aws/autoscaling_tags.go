@@ -30,7 +30,7 @@ func autoscalingTagsSchema() *schema.Schema {
 
 				"propagate_at_launch": &schema.Schema{
 					Type:     schema.TypeBool,
-					Optional: true,
+					Required: true,
 				},
 			},
 		},
@@ -53,8 +53,8 @@ func autoscalingTagsToHash(v interface{}) int {
 func setAutoscalingTags(conn *autoscaling.AutoScaling, d *schema.ResourceData) error {
 	if d.HasChange("tag") {
 		oraw, nraw := d.GetChange("tag")
-		o := oraw.(*schema.Set).MapByKey("key")
-		n := nraw.(*schema.Set).MapByKey("key")
+		o := setToMapByKey(oraw.(*schema.Set), "key")
+		n := setToMapByKey(nraw.(*schema.Set), "key")
 
 		resourceID := d.Get("name").(string)
 		c, r := diffAutoscalingTags(
@@ -150,11 +150,21 @@ func autoscalingTagDescriptionsToMap(ts []autoscaling.TagDescription) map[string
 	tags := make(map[string]map[string]interface{})
 	for _, t := range ts {
 		tag := map[string]interface{}{
-			"value":               t.Value,
-			"propagate_at_launch": t.PropagateAtLaunch,
+			"value":               *t.Value,
+			"propagate_at_launch": *t.PropagateAtLaunch,
 		}
 		tags[*t.Key] = tag
 	}
 
 	return tags
+}
+
+func setToMapByKey(s *schema.Set, key string) map[string]interface{} {
+	result := make(map[string]interface{})
+	for _, rawData := range s.List() {
+		data := rawData.(map[string]interface{})
+		result[data[key].(string)] = data
+	}
+
+	return result
 }

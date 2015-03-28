@@ -40,6 +40,9 @@ IMPROVEMENTS:
       like refresh.
   * core: Autoload `terraform.tfvars.json` as well as `terraform.tfvars` [GH-1030]
   * core: `.tf` files that start with a period are now ignored. [GH-1227]
+  * command/remote-config: After enabling remote state, a `pull` is
+      automatically done initially.
+  * providers/google: Add `size` option to disk blocks for instances. [GH-1284]
 
 BUG FIXES:
 
@@ -52,13 +55,18 @@ BUG FIXES:
       a computed attribute was used as part of a set parameter. [GH-1073]
   * core: Fix edge case where state containing both "resource" and
       "resource.0" would ignore the latter completely. [GH-1086]
+  * core: Modules with a source of a relative file path moving up
+      directories work properly, i.e. "../a" [GH-1232]
   * providers/aws: manually deleted VPC removes it from the state
   * providers/aws: `source_dest_check` regression fixed (now works). [GH-1020]
   * providers/aws: Longer wait times for DB instances.
   * providers/aws: Longer wait times for route53 records (30 mins). [GH-1164]
   * providers/digitalocean: Waits until droplet is ready to be destroyed [GH-1057]
   * providers/digitalocean: More lenient about 404's while waiting [GH-1062]
+  * providers/digitalocean: FQDN for domain records in CNAME, MX, NS, etc.
+      Also fixes invalid updates in plans. [GH-863]
   * providers/google: Network data in state was not being stored. [GH-1095]
+  * providers/heroku: Fix panic when config vars block was empty. [GH-1211]
 
 PLUGIN CHANGES:
 
