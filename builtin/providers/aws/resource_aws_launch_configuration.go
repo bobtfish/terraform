@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
@@ -90,6 +91,73 @@ func resourceAwsLaunchConfiguration() *schema.Resource {
 				Optional: true,
 				ForceNew: true,
 			},
+
+			"block_device": &schema.Schema{
+				Type:     schema.TypeSet,
+				Optional: true,
+				Computed: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"device_name": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+
+						"virtual_name": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+						},
+
+						"snapshot_id": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+						},
+
+						"volume_type": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+						},
+
+						"volume_size": &schema.Schema{
+							Type:     schema.TypeInt,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+						},
+
+						"delete_on_termination": &schema.Schema{
+							Type:     schema.TypeBool,
+							Optional: true,
+							Default:  true,
+							ForceNew: true,
+						},
+
+						"encrypted": &schema.Schema{
+							Type:     schema.TypeBool,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+						},
+					},
+				},
+				Set: func(v interface{}) int {
+					var buf bytes.Buffer
+					m := v.(map[string]interface{})
+					buf.WriteString(fmt.Sprintf("%t-", m["delete_on_termination"].(bool)))
+					buf.WriteString(fmt.Sprintf("%s-", m["device_name"].(string)))
+					// See the NOTE in "ebs_block_device" for why we skip iops here.
+					// buf.WriteString(fmt.Sprintf("%d-", m["iops"].(int)))
+					buf.WriteString(fmt.Sprintf("%d-", m["volume_size"].(int)))
+					buf.WriteString(fmt.Sprintf("%s-", m["volume_type"].(string)))
+					return hashcode.String(buf.String())
+				},
+			},
 		},
 	}
 }
@@ -123,6 +191,21 @@ func resourceAwsLaunchConfigurationCreate(d *schema.ResourceData, meta interface
 			v.(*schema.Set).List())
 	}
 
+	if v := d.Get("block_device"); v != nil {
+		vs := v.(*schema.Set).List()
+		if len(vs) > 0 {
+			createLaunchConfigurationOpts.BlockDeviceMappings = make([]autoscaling.BlockDeviceMapping, len(vs))
+			for i, v := range vs {
+				bd := v.(map[string]interface{})
+				createLaunchConfigurationOpts.BlockDeviceMappings[i].DeviceName = bd["device_name"].(aws.StringValue)
+				createLaunchConfigurationOpts.BlockDeviceMappings[i].VirtualName = bd["virtual_name"].(aws.StringValue)
+				createLaunchConfigurationOpts.BlockDeviceMappings[i].EBS.SnapshotID = bd["snapshot_id"].(aws.StringValue)
+				createLaunchConfigurationOpts.BlockDeviceMappings[i].EBS.VolumeType = bd["volume_type"].(aws.StringValue)
+				createLaunchConfigurationOpts.BlockDeviceMappings[i].EBS.VolumeSize = bd["volume_size"].(aws.IntegerValue)
+				createLaunchConfigurationOpts.BlockDeviceMappings[i].EBS.DeleteOnTermination = bd["delete_on_termination"].(aws.BooleanValue)
+			}
+		}
+	}
 	if v, ok := d.GetOk("name"); ok {
 		createLaunchConfigurationOpts.LaunchConfigurationName = aws.String(v.(string))
 		d.SetId(d.Get("name").(string))
@@ -180,6 +263,17 @@ func resourceAwsLaunchConfigurationRead(d *schema.ResourceData, meta interface{}
 	d.Set("instance_type", *lc.InstanceType)
 	d.Set("name", *lc.LaunchConfigurationName)
 
+	bds := make([]map[string]interface{}, len(lc.BlockDeviceMappings))
+	for i, m := range lc.BlockDeviceMappings {
+		bds[i] = make(map[string]interface{})
+		bds[i]["device_name"] = m.DeviceName
+		bds[i]["snapshot_id"] = m.EBS.SnapshotID
+		bds[i]["volume_type"] = m.EBS.VolumeType
+		bds[i]["volume_size"] = m.EBS.VolumeSize
+		bds[i]["delete_on_termination"] = m.EBS.DeleteOnTermination
+	}
+	d.Set("block_device", bds)
+
 	if lc.IAMInstanceProfile != nil {
 		d.Set("iam_instance_profile", *lc.IAMInstanceProfile)
 	} else {
@@ -197,6 +291,7 @@ func resourceAwsLaunchConfigurationRead(d *schema.ResourceData, meta interface{}
 	} else {
 		d.Set("security_groups", nil)
 	}
+
 	return nil
 }
 
