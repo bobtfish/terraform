@@ -214,7 +214,20 @@ func (s *State) DeepCopy() *State {
 // IncrementSerialMaybe increments the serial number of this state
 // if it different from the other state.
 func (s *State) IncrementSerialMaybe(other *State) {
+	if s == nil {
+		return
+	}
+	if other == nil {
+		return
+	}
+	if s.Serial > other.Serial {
+		return
+	}
 	if !s.Equal(other) {
+		if other.Serial > s.Serial {
+			s.Serial = other.Serial
+		}
+
 		s.Serial++
 	}
 }
@@ -843,6 +856,9 @@ func (i *InstanceState) init() {
 	if i.Attributes == nil {
 		i.Attributes = make(map[string]string)
 	}
+	if i.Meta == nil {
+		i.Meta = make(map[string]string)
+	}
 	i.Ephemeral.init()
 }
 
@@ -858,6 +874,12 @@ func (i *InstanceState) deepcopy() *InstanceState {
 		n.Attributes = make(map[string]string, len(i.Attributes))
 		for k, v := range i.Attributes {
 			n.Attributes[k] = v
+		}
+	}
+	if i.Meta != nil {
+		n.Meta = make(map[string]string, len(i.Meta))
+		for k, v := range i.Meta {
+			n.Meta[k] = v
 		}
 	}
 	return n

@@ -3,8 +3,8 @@ package aws
 import (
 	"fmt"
 	"log"
-
-	"github.com/hashicorp/terraform/helper/multierror"
+	"os"
+	"time"
 
 	"github.com/hashicorp/aws-sdk-go/aws"
 	"github.com/hashicorp/aws-sdk-go/gen/autoscaling"
@@ -13,13 +13,17 @@ import (
 	"github.com/hashicorp/aws-sdk-go/gen/rds"
 	"github.com/hashicorp/aws-sdk-go/gen/route53"
 	"github.com/hashicorp/aws-sdk-go/gen/s3"
+	"github.com/hashicorp/terraform/helper/multierror"
 )
 
 type Config struct {
-	AccessKey string
-	SecretKey string
-	Token     string
-	Region    string
+	AccessKey              string
+	SecretKey              string
+	Token                  string
+	CredentialsFilePath    string
+	CredentialsFileProfile string
+	Region                 string
+	Provider               aws.CredentialsProvider
 }
 
 type AWSClient struct {
@@ -30,6 +34,53 @@ type AWSClient struct {
 	r53conn         *route53.Route53
 	region          string
 	rdsconn         *rds.RDS
+}
+
+func (c *Config) loadAndValidate(providerCode string) (interface{}, error) {
+	c.tryLoadingDeprecatedEnvVars()
+	credsProvider, err := c.getCredsProvider(providerCode)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := credsProvider.Credentials(); err != nil {
+		return nil, err
+	}
+
+	c.Provider = credsProvider
+
+	return c.Client()
+}
+
+func (c *Config) tryLoadingDeprecatedEnvVars() {
+	// Backward compatibility
+	if c.Token == "" {
+		c.Token = os.Getenv("AWS_SECURITY_TOKEN")
+	}
+	if c.CredentialsFilePath == "" {
+		c.CredentialsFilePath = os.Getenv("AWS_CREDENTIAL_FILE")
+	}
+	if c.CredentialsFileProfile == "" {
+		c.CredentialsFileProfile = os.Getenv("AWS_PROFILE")
+	}
+}
+
+func (c *Config) getCredsProvider(providerCode string) (aws.CredentialsProvider, error) {
+	if providerCode == "static" {
+		return aws.Creds(c.AccessKey, c.SecretKey, c.Token), nil
+	} else if providerCode == "iam" {
+		return aws.IAMCreds(), nil
+	} else if providerCode == "env" {
+		return aws.EnvCreds()
+	} else if providerCode == "file" {
+		// TODO: Could be a variable but there's no standardized name for it
+		// More importantly, what is really the point of this variable??
+		expiry := 10 * time.Minute
+
+		return aws.ProfileCreds(
+			c.CredentialsFilePath, c.CredentialsFileProfile, expiry)
+	}
+	return aws.DetectCreds(c.AccessKey, c.SecretKey, c.Token), nil
 }
 
 // Client configures and returns a fully initailized AWSClient
@@ -50,26 +101,24 @@ func (c *Config) Client() (interface{}, error) {
 		// store AWS region in client struct, for region specific operations such as
 		// bucket storage in S3
 		client.region = c.Region
-
-		log.Println("[INFO] Building AWS auth structure")
-		creds := aws.Creds(c.AccessKey, c.SecretKey, c.Token)
+		credsProvider := c.Provider
 
 		log.Println("[INFO] Initializing ELB connection")
-		client.elbconn = elb.New(creds, c.Region, nil)
+		client.elbconn = elb.New(credsProvider, c.Region, nil)
 		log.Println("[INFO] Initializing AutoScaling connection")
-		client.autoscalingconn = autoscaling.New(creds, c.Region, nil)
+		client.autoscalingconn = autoscaling.New(credsProvider, c.Region, nil)
 		log.Println("[INFO] Initializing S3 connection")
-		client.s3conn = s3.New(creds, c.Region, nil)
+		client.s3conn = s3.New(credsProvider, c.Region, nil)
 		log.Println("[INFO] Initializing RDS connection")
-		client.rdsconn = rds.New(creds, c.Region, nil)
+		client.rdsconn = rds.New(credsProvider, c.Region, nil)
 
 		// aws-sdk-go uses v4 for signing requests, which requires all global
 		// endpoints to use 'us-east-1'.
 		// See http://docs.aws.amazon.com/general/latest/gr/sigv4_changes.html
 		log.Println("[INFO] Initializing Route53 connection")
-		client.r53conn = route53.New(creds, "us-east-1", nil)
+		client.r53conn = route53.New(credsProvider, "us-east-1", nil)
 		log.Println("[INFO] Initializing EC2 Connection")
-		client.ec2conn = ec2.New(creds, c.Region, nil)
+		client.ec2conn = ec2.New(credsProvider, c.Region, nil)
 	}
 
 	if len(errs) > 0 {
