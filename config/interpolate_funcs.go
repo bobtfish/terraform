@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform/config/lang/ast"
+	"github.com/mitchellh/go-homedir"
 )
 
 // Funcs is the mapping of built-in functions for configuration.
@@ -22,6 +23,7 @@ func init() {
 		"element": interpolationFuncElement(),
 		"replace": interpolationFuncReplace(),
 		"split":   interpolationFuncSplit(),
+		"toint":   interpolationFuncToint(),
 
 		// Concat is a little useless now since we supported embeddded
 		// interpolations but we keep it around for backwards compat reasons.
@@ -57,7 +59,11 @@ func interpolationFuncFile() ast.Function {
 		ArgTypes:   []ast.Type{ast.TypeString},
 		ReturnType: ast.TypeString,
 		Callback: func(args []interface{}) (interface{}, error) {
-			data, err := ioutil.ReadFile(args[0].(string))
+			path, err := homedir.Expand(args[0].(string))
+			if err != nil {
+				return "", err
+			}
+			data, err := ioutil.ReadFile(path)
 			if err != nil {
 				return "", err
 			}
@@ -182,6 +188,26 @@ func interpolationFuncElement() ast.Function {
 
 			v := list[index%len(list)]
 			return v, nil
+		},
+	}
+}
+
+// interpolationFuncToint implements the "toint" function that
+// takes a string and returns an integer, so that you can do math operations
+// on it.
+func interpolationFuncToint() ast.Function {
+	return ast.Function{
+		ArgTypes:   []ast.Type{ast.TypeString},
+		ReturnType: ast.TypeInt,
+		Variadic:   false,
+		Callback: func(args []interface{}) (interface{}, error) {
+			s := args[0].(string)
+			i, err := strconv.Atoi(s)
+			if err != nil {
+				return -1, fmt.Errorf(
+					"invalid value to convert to int: %s", s)
+			}
+			return i, nil
 		},
 	}
 }

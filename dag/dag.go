@@ -272,7 +272,7 @@ func (g *AcyclicGraph) depthFirstWalk(start []Vertex, cb WalkFunc) error {
 	return nil
 }
 
-// depthFirstWalk does a depth-first walk _up_ the graph starting from
+// reverseDepthFirstWalk does a depth-first walk _up_ the graph starting from
 // the vertices in start.
 func (g *AcyclicGraph) reverseDepthFirstWalk(start []Vertex, cb WalkFunc) error {
 	seen := make(map[Vertex]struct{})

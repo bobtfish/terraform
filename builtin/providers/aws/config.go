@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/aws-sdk-go/gen/autoscaling"
 	"github.com/hashicorp/aws-sdk-go/gen/ec2"
 	"github.com/hashicorp/aws-sdk-go/gen/elb"
+	"github.com/hashicorp/aws-sdk-go/gen/iam"
 	"github.com/hashicorp/aws-sdk-go/gen/rds"
 	"github.com/hashicorp/aws-sdk-go/gen/route53"
 	"github.com/hashicorp/aws-sdk-go/gen/s3"
@@ -34,6 +35,7 @@ type AWSClient struct {
 	r53conn         *route53.Route53
 	region          string
 	rdsconn         *rds.RDS
+	iamconn         *iam.IAM
 }
 
 func (c *Config) loadAndValidate(providerCode string) (interface{}, error) {
@@ -119,6 +121,7 @@ func (c *Config) Client() (interface{}, error) {
 		client.r53conn = route53.New(credsProvider, "us-east-1", nil)
 		log.Println("[INFO] Initializing EC2 Connection")
 		client.ec2conn = ec2.New(credsProvider, c.Region, nil)
+		client.iamconn = iam.New(credsProvider, c.Region, nil)
 	}
 
 	if len(errs) > 0 {
