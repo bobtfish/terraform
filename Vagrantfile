@@ -14,13 +14,13 @@ cd /opt/go/src && ./all.bash
 
 # Setup the GOPATH
 mkdir -p /opt/gopath
-cat <<EOF >/etc/profile.d/gopath.sh
-export GOPATH="/opt/gopath"
-export PATH="/opt/go/bin:\$GOPATH/bin:\$PATH"
-EOF
-
 export GOPATH="/opt/gopath"
 export PATH="/opt/go/bin:$GOPATH/bin:$PATH"
+cat <<EOF >/etc/profile.d/gopath.sh
+export GOPATH="/opt/gopath"
+export PATH="/opt/go/bin:/opt/gopath/bin:\$PATH"
+EOF
+
 
 # Make sure the GOPATH is usable by vagrant
 chown -R vagrant:vagrant /opt/go
