@@ -16,7 +16,7 @@ cd /opt/go/src && ./all.bash
 mkdir -p /opt/gopath
 cat <<EOF >/etc/profile.d/gopath.sh
 export GOPATH="/opt/gopath"
-export PATH="/opt/go/bin:$GOPATH/bin:\$PATH"
+export PATH="/opt/go/bin:\$GOPATH/bin:\$PATH"
 EOF
 
 export GOPATH="/opt/gopath"
