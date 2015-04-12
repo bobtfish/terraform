@@ -19,16 +19,24 @@ export GOPATH="/opt/gopath"
 export PATH="/opt/go/bin:$GOPATH/bin:\$PATH"
 EOF
 
+export GOPATH="/opt/gopath"
+export PATH="/opt/go/bin:$GOPATH/bin:$PATH"
+
 # Make sure the GOPATH is usable by vagrant
 chown -R vagrant:vagrant /opt/go
 chown -R vagrant:vagrant /opt/gopath
 
-ruby ruby-json python-pip
 mkdir -p /opt/gopath/src/github.com/hashicorp
 cp -r /vagrant /opt/gopath/src/github.com/hashicorp/terraform
+
+# Make sure the GOPATH is usable by vagrant
+chown -R vagrant:vagrant /opt/go
+chown -R vagrant:vagrant /opt/gopath
+
+# Build terraform and install
 cd /opt/gopath/src/github.com/hashicorp/terraform
-make updatedeps
-make dev
+sudo -u vagrant bash -c 'source /etc/profile.d/gopath.sh; make updatedeps'
+sudo -u vagrant bash -c 'source /etc/profile.d/gopath.sh; make dev'
 SCRIPT
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
