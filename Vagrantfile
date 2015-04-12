@@ -7,7 +7,8 @@ VAGRANTFILE_API_VERSION = "2"
 $script = <<SCRIPT
 # Install Go and prerequisites
 apt-get -qq update
-apt-get -qq install build-essential curl git-core libpcre3-dev mercurial pkg-config zip
+apt-get -qq install build-essential curl git-core libpcre3-dev mercurial pkg-config zip ruby-json python-pip
+pip install awscli
 hg clone -u release https://code.google.com/p/go /opt/go
 cd /opt/go/src && ./all.bash
 
@@ -21,6 +22,13 @@ EOF
 # Make sure the GOPATH is usable by vagrant
 chown -R vagrant:vagrant /opt/go
 chown -R vagrant:vagrant /opt/gopath
+
+ruby ruby-json python-pip
+mkdir -p /opt/gopath/src/github.com/hashicorp
+cp -r /vagrant /opt/gopath/src/github.com/hashicorp/terraform
+cd /opt/gopath/src/github.com/hashicorp/terraform
+make updatedeps
+make dev
 SCRIPT
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
