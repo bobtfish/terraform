@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 )
 
@@ -42,12 +43,26 @@ func resourceAwsSpotFleetRequest() *schema.Resource {
 				Required: true,
 				ForceNew: false,
 			},
-			// TODO: AllocationStrategy
-			// TODO: ClientToken?
-			// TODO: ExcessCapacityTerminationPolicy
-			// TODO: TerminateInstancesWithExpiration
-			// TODO: ValidFrom
-			// TODO: ValidUntil
+			"allocation_strategy": &schema.Schema{
+				Type:     schema.TypeString,
+				ForceNew: true,
+			},
+			"excess_capacity_termination_policy": &schema.Schema{
+				Type:     schema.TypeString,
+				ForceNew: true,
+			},
+			"terminate_instances_with_expiration": &schema.Schema{
+				Type:     schema.TypeBool,
+				Optional: true,
+			},
+			"valid_from": &schema.Schema{
+				Type:     schema.TypeString,
+				ForceNew: true,
+			},
+			"valid_until": &schema.Schema{
+				Type:     schema.TypeString,
+				ForceNew: true,
+			},
 		},
 	}
 }
@@ -59,15 +74,15 @@ func resourceAwsSpotFleetRequestCreate(d *schema.ResourceData, meta interface{})
 	// http://docs.aws.amazon.com/sdk-for-go/api/service/ec2.html#type-SpotFleetRequestConfigData
 	spotFleetConfig := &ec2.SpotFleetRequestConfigData{
 		IamFleetRole:                     aws.String(d.Get("iam_fleet_role").(string)),
-		LaunchSpecifications:             []*ec2.SpotFleetLaunchSpecification{},
+		LaunchSpecifications:             []*ec2.SpotFleetLaunchSpecification{}, // TODO: Read this
 		SpotPrice:                        aws.String(d.Get("spot_price").(string)),
-		TargetCapacity:                   aws.Int64(1), // Required
-		AllocationStrategy:               aws.String("AllocationStrategy"),
-		ClientToken:                      aws.String("String"),
-		ExcessCapacityTerminationPolicy:  aws.String("ExcessCapacityTerminationPolicy"),
-		TerminateInstancesWithExpiration: aws.Bool(true),
-		ValidFrom:                        aws.Time(time.Now()),
-		ValidUntil:                       aws.Time(time.Now()),
+		TargetCapacity:                   aws.Int64(int64(d.Get("target_capacity").(int))),
+		AllocationStrategy:               aws.String(d.Get("allocation_strategy").(string)),
+		ClientToken:                      aws.String(resource.UniqueId()),
+		ExcessCapacityTerminationPolicy:  aws.String(d.Get("excess_capacity_termination_policy").(string)),
+		TerminateInstancesWithExpiration: aws.Bool(d.Get("terminate_instances_with_expiration").(bool)),
+		ValidFrom:                        aws.Time(time.Now()), // TODO: Read time?
+		ValidUntil:                       aws.Time(time.Now()), // TODO: Read time?
 	}
 
 	// http://docs.aws.amazon.com/sdk-for-go/api/service/ec2.html#type-RequestSpotFleetInput
