@@ -310,54 +310,51 @@ func buildAwsSpotFleetInstanceOpts(d map[string]interface{}, meta interface{}) (
 	conn := meta.(*AWSClient).ec2conn
 
 	opts := &awsSpotFleetInstanceOpts{
-		DisableAPITermination: aws.Bool(d["disable_api_termination"].(bool)),
-		ImageID:               aws.String(d["ami"].(string)),
-		InstanceType:          aws.String(d["instance_type"].(string)),
+		//DisableAPITermination: aws.Bool(d["disable_api_termination"].(bool)),
+		ImageID:      aws.String(d["ami"].(string)),
+		InstanceType: aws.String(d["instance_type"].(string)),
 	}
 
 	if v, ok := d["ebs_optimized"]; ok {
 		opts.EBSOptimized = aws.Bool(v.(bool))
 	}
 
-	if v := d["instance_initiated_shutdown_behavior"].(string); v != "" {
-		opts.InstanceInitiatedShutdownBehavior = aws.String(v)
+	if v, ok := d["instance_initiated_shutdown_behavior"]; ok {
+		opts.InstanceInitiatedShutdownBehavior = aws.String(v.(string))
 	}
 
-	opts.Monitoring = &ec2.RunInstancesMonitoringEnabled{
-		Enabled: aws.Bool(d["monitoring"].(bool)),
+	if v, ok := d["monitoring"]; ok {
+		opts.Monitoring = &ec2.RunInstancesMonitoringEnabled{
+			Enabled: aws.Bool(v.(bool)),
+		}
 	}
 
-	opts.IAMInstanceProfile = &ec2.IamInstanceProfileSpecification{
-		Name: aws.String(d["iam_instance_profile"].(string)),
+	if v, ok := d["iam_instance_profile"]; ok {
+		opts.IAMInstanceProfile = &ec2.IamInstanceProfileSpecification{
+			Name: aws.String(v.(string)),
+		}
 	}
 
-	opts.UserData64 = aws.String(
-		base64.StdEncoding.EncodeToString([]byte(d["user_data"].(string))))
+	if v, ok := d["user_data"]; ok {
+		opts.UserData64 = aws.String(
+			base64.StdEncoding.EncodeToString([]byte(v.(string))))
+	}
 
 	// check for non-default Subnet, and cast it to a String
 	subnet, hasSubnet := d["subnet_id"]
 	subnetID := subnet.(string)
 
-	// Placement is used for aws_instance; SpotPlacement is used for
-	// aws_spot_instance_request. They represent the same data. :-|
-	opts.Placement = &ec2.Placement{
-		AvailabilityZone: aws.String(d["availability_zone"].(string)),
-		GroupName:        aws.String(d["placement_group"].(string)),
+	if v, ok := d["tenancy"]; ok {
+		opts.Placement.Tenancy = aws.String(v.(string))
 	}
 
-	opts.SpotPlacement = &ec2.SpotPlacement{
-		AvailabilityZone: aws.String(d["availability_zone"].(string)),
-		GroupName:        aws.String(d["placement_group"].(string)),
+	var associatePublicIPAddress bool
+	if v, ok := d["associate_public_ip_address"]; ok {
+		associatePublicIPAddress = v.(bool)
 	}
-
-	if v := d["tenancy"].(string); v != "" {
-		opts.Placement.Tenancy = aws.String(v)
-	}
-
-	associatePublicIPAddress := d["associate_public_ip_address"].(bool)
 
 	var groups []*string
-	if v := d["security_groups"]; v != nil {
+	if v, ok := d["security_groups"]; ok {
 		// Security group names.
 		// For a nondefault VPC, you must use security group IDs instead.
 		// See http://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_RunInstances.html
@@ -412,9 +409,11 @@ func buildAwsSpotFleetInstanceOpts(d map[string]interface{}, meta interface{}) (
 			opts.SecurityGroups = groups
 		}
 
-		if v := d["vpc_security_group_ids"].(*schema.Set); v.Len() > 0 {
-			for _, v := range v.List() {
-				opts.SecurityGroupIDs = append(opts.SecurityGroupIDs, aws.String(v.(string)))
+		if v, ok := d["vpc_security_group_ids"]; ok {
+			if s := v.(*schema.Set); s.Len() > 0 {
+				for _, v := range s.List() {
+					opts.SecurityGroupIDs = append(opts.SecurityGroupIDs, aws.String(v.(string)))
+				}
 			}
 		}
 	}
