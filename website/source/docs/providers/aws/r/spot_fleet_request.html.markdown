@@ -16,55 +16,65 @@ requested on the spot market.
 
 ## Example Usage
 
-// TODO
+# Request a simple spot fleet
 ```
-# Request a spot fleet instance
 resource "aws_spot_fleet_request" "myfleet" {
-    ami = "ami-1234"
-    spot_price = "0.03"
-    instance_type = "c4.xlarge"
+    iam_fleet_role = 'foo'
+    launch_specification {
+        instance_type = "m3.xlarge"
+        bid_price = "$1"
+        weight = 2
+        ...block_device {
+        ...}
+
+        network_interface {
+            associate_public_ipaddress = false
+            deleter_on_tgermination = true
+        }
+
+        securitygroups = [ "default" ]
+    }
+    launch_specification {
+        instance_type = "m3.large"
+        bid_price = "$1"
+        weight = 1
+    }
+    spot_price = '0.01'
 }
 ```
 
 ## Argument Reference
 
-// TODO
-Spot Instance Requests support all the same arguments as
-[`aws_instance`](instance.html), with the addition of:
+Most of these arguments directly correspond to the
+[offical API](http://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_SpotFleetRequestConfigData.html).
 
-* `spot_price` - (Required) The price to request on the spot market.
-* `wait_for_fulfillment` - (Optional; Default: false) If set, Terraform will
-  wait for the Spot Request to be fulfilled, and will throw an error if the
-  timeout of 10m is reached.
-* `spot_type` - (Optional; Default: "persistent") If set to "one-time", after
-  the instance is terminated, the spot request will be closed. Also, Terraform
-  can't manage one-time spot requests, just launch them.
-* `block_duration_minutes` - (Optional) The required duration for the Spot instances, in minutes. This value must be a multiple of 60 (60, 120, 180, 240, 300, or 360).
-  The duration period starts as soon as your Spot instance receives its instance ID. At the end of the duration period, Amazon EC2 marks the Spot instance for termination and provides a Spot instance termination notice, which gives the instance a two-minute warning before it terminates.
-  Note that you can't specify an Availability Zone group or a launch group if you specify a duration.
+* `iam_fleet_role` - (required) Grants the Spot fleet permission to terminate
+Spot instances on your behalf when you cancel its Spot fleet request using
+CancelSpotFleetRequests or when the Spot fleet request expires, if you set
+terminateInstancesWithExpiration.
+* `launch_specifications` - TODO
+* `spot_price` - (required) The bid price per unit hour.
+* `target_capacity` - The number of units to request. You can choose to set the
+  target capacity in terms of instances or a performance characteristic that is
+important to your application workload, such as vCPUs, memory, or I/O.
+* `allocation_strategy` - Indicates how to allocate the target capacity across
+  the Spot pools specified by the Spot fleet request. The default is
+lowestPrice.
+* `excess_capacity_termination_policy` - Indicates whether running Spot
+  instances should be terminated if the target capacity of the Spot fleet
+request is decreased below the current size of the Spot fleet. 
+* `terminate_instances_with_expiration` -Indicates whether running Spot
+  instances should be terminated when the Spot fleet request expires.
+* `valid_from` - The start date and time of the request, in UTC format (for
+  example, YYYY-MM-DDTHH:MM:SSZ). The default is to start fulfilling the
+request immediately. 
+* `valid_until` - The end date and time of the request, in UTC format (for
+  example, YYYY-MM-DDTHH:MM:SSZ). At this point, no new Spot instance requests
+are placed or enabled to fulfill the request.
+
 
 ## Attributes Reference
 
-// TODO
 The following attributes are exported:
 
 * `id` - The Spot Instance Request ID.
-
-These attributes are exported, but they are expected to change over time and so
-should only be used for informational purposes, not for resource dependencies:
-
-* `spot_bid_status` - The current [bid
-  status](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-bid-status.html)
-  of the Spot Instance Request.
-* `spot_request_state` The current [request
-  state](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-requests.html#creating-spot-request-status)
-  of the Spot Instance Request.
-* `spot_instance_id` - The Instance ID (if any) that is currently fulfilling
-  the Spot Instance request.
-* `public_dns` - The public DNS name assigned to the instance. For EC2-VPC, this 
-  is only available if you've enabled DNS hostnames for your VPC
-* `public_ip` - The public IP address assigned to the instance, if applicable.
-* `private_dns` - The private DNS name assigned to the instance. Can only be 
-  used inside the Amazon EC2, and only available if you've enabled DNS hostnames 
-  for your VPC
-* `private_ip` - The private IP address assigned to the instance

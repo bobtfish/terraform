@@ -2,6 +2,8 @@ package aws
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"time"
@@ -28,23 +30,220 @@ func resourceAwsSpotFleetRequest() *schema.Resource {
 				ForceNew: true,
 			},
 			// http://docs.aws.amazon.com/sdk-for-go/api/service/ec2.html#type-SpotFleetLaunchSpecification
-			"launch_specifications": &schema.Schema{
+			// http://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_SpotFleetLaunchSpecification.html
+			"launch_specification": &schema.Schema{
 				Type:     schema.TypeSet,
 				Required: true,
 				ForceNew: true,
-				// TODO: Figure out what the right schema is for this list
-				Elem: &schema.Schema{Type: schema.TypeString},
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"ebs_block_device": &schema.Schema{
+							Type:     schema.TypeSet,
+							Optional: true,
+							Computed: true,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"delete_on_termination": &schema.Schema{
+										Type:     schema.TypeBool,
+										Optional: true,
+										Default:  true,
+										ForceNew: true,
+									},
+									"device_name": &schema.Schema{
+										Type:     schema.TypeString,
+										Required: true,
+										ForceNew: true,
+									},
+									"encrypted": &schema.Schema{
+										Type:     schema.TypeBool,
+										Optional: true,
+										Computed: true,
+										ForceNew: true,
+									},
+									"iops": &schema.Schema{
+										Type:     schema.TypeInt,
+										Optional: true,
+										Computed: true,
+										ForceNew: true,
+									},
+									"snapshot_id": &schema.Schema{
+										Type:     schema.TypeString,
+										Optional: true,
+										Computed: true,
+										ForceNew: true,
+									},
+									"volume_size": &schema.Schema{
+										Type:     schema.TypeInt,
+										Optional: true,
+										Computed: true,
+										ForceNew: true,
+									},
+									"volume_type": &schema.Schema{
+										Type:     schema.TypeString,
+										Optional: true,
+										Computed: true,
+										ForceNew: true,
+									},
+								},
+							},
+							Set: func(v interface{}) int {
+								var buf bytes.Buffer
+								m := v.(map[string]interface{})
+								buf.WriteString(fmt.Sprintf("%s-", m["device_name"].(string)))
+								buf.WriteString(fmt.Sprintf("%s-", m["snapshot_id"].(string)))
+								return hashcode.String(buf.String())
+							},
+						},
+						"ephemeral_block_device": &schema.Schema{
+							Type:     schema.TypeSet,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"device_name": &schema.Schema{
+										Type:     schema.TypeString,
+										Required: true,
+									},
+									"virtual_name": &schema.Schema{
+										Type:     schema.TypeString,
+										Required: true,
+									},
+								},
+							},
+							Set: func(v interface{}) int {
+								var buf bytes.Buffer
+								m := v.(map[string]interface{})
+								buf.WriteString(fmt.Sprintf("%s-", m["device_name"].(string)))
+								buf.WriteString(fmt.Sprintf("%s-", m["virtual_name"].(string)))
+								return hashcode.String(buf.String())
+							},
+						},
+						"root_block_device": &schema.Schema{
+							// TODO: This is a set because we don't support singleton
+							//       sub-resources today. We'll enforce that the set only ever has
+							//       length zero or one below. When TF gains support for
+							//       sub-resources this can be converted.
+							Type:     schema.TypeSet,
+							Optional: true,
+							Computed: true,
+							Elem: &schema.Resource{
+								// "You can only modify the volume size, volume type, and Delete on
+								// Termination flag on the block device mapping entry for the root
+								// device volume." - bit.ly/ec2bdmap
+								Schema: map[string]*schema.Schema{
+									"delete_on_termination": &schema.Schema{
+										Type:     schema.TypeBool,
+										Optional: true,
+										Default:  true,
+										ForceNew: true,
+									},
+									"iops": &schema.Schema{
+										Type:     schema.TypeInt,
+										Optional: true,
+										Computed: true,
+										ForceNew: true,
+									},
+									"volume_size": &schema.Schema{
+										Type:     schema.TypeInt,
+										Optional: true,
+										Computed: true,
+										ForceNew: true,
+									},
+									"volume_type": &schema.Schema{
+										Type:     schema.TypeString,
+										Optional: true,
+										Computed: true,
+										ForceNew: true,
+									},
+								},
+							},
+							Set: func(v interface{}) int {
+								// there can be only one root device; no need to hash anything
+								return 0
+							},
+						},
+						"ebs_optimized": &schema.Schema{
+							Type:     schema.TypeBool,
+							Optional: true,
+						},
+						"iam_instance_profile": &schema.Schema{
+							Type:     schema.TypeString,
+							ForceNew: true,
+							Optional: true,
+						},
+						"ami": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+						"instance_type": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+						"key_name": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+							Computed: true,
+						},
+						"monitoring": &schema.Schema{
+							Type:     schema.TypeBool,
+							Optional: true,
+						},
+						//									"network_interface_set"
+						"placement_group": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+						},
+						"spot_price": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+						"subnet_id": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+							Computed: true,
+							ForceNew: true,
+						},
+						"user_data": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+							StateFunc: func(v interface{}) string {
+								switch v.(type) {
+								case string:
+									hash := sha1.Sum([]byte(v.(string)))
+									return hex.EncodeToString(hash[:])
+								default:
+									return ""
+								}
+							},
+						},
+						"weighted_capacity": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+						},
+						// TODO double check this
+						"availability_zone": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+						},
+					},
+				},
 				Set: func(v interface{}) int {
 					var buf bytes.Buffer
 					m := v.(map[string]interface{})
-					buf.WriteString(fmt.Sprintf("%s-", m["name"].(string)))
+					buf.WriteString(fmt.Sprintf("%s-", m["availability_zone"].(string)))
+					buf.WriteString(fmt.Sprintf("%s-", m["instance_type"].(string)))
 					return hashcode.String(buf.String())
 				},
-			},
-			"spot_price": &schema.Schema{
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
 			},
 			// Everything on a spot fleet is ForceNew except target_capacity
 			"target_capacity": &schema.Schema{
@@ -60,6 +259,11 @@ func resourceAwsSpotFleetRequest() *schema.Resource {
 			"excess_capacity_termination_policy": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
+				ForceNew: true,
+			},
+			"spot_price": &schema.Schema{
+				Type:     schema.TypeString,
+				Required: true,
 				ForceNew: true,
 			},
 			"terminate_instances_with_expiration": &schema.Schema{
@@ -83,38 +287,33 @@ func resourceAwsSpotFleetRequest() *schema.Resource {
 
 func buildAwsSpotFleetLaunchSpecification(
 	d *schema.ResourceData, meta interface{}) ([]*ec2.SpotFleetLaunchSpecification, error) {
-
 	specs := []*ec2.SpotFleetLaunchSpecification{}
-	user_specs := d.Get("launch_specifications").(*schema.Set).List()
+	user_specs := d.Get("launch_specification").(*schema.Set).List()
 	for _, user_spec := range user_specs {
 		user_spec_map := user_spec.(map[string]interface{})
+		// panic: interface conversion: interface {} is map[string]interface {}, not *schema.ResourceData
+		instanceOpts, err := buildAwsInstanceOpts(user_spec.(*schema.ResourceData), meta)
+		if err != nil {
+			return nil, err
+		}
 		specs = append(specs, &ec2.SpotFleetLaunchSpecification{
-			// TODO: Yuck
-			BlockDeviceMappings: user_spec_map["block_device_mappings"],
-			EbsOptimized:        aws.Bool(user_spec_map["ebs_optimized"].(bool)),
-			IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
-				Name: aws.String(user_spec_map["iam_instance_profile"].(string)),
-			},
-			ImageId:      aws.String(user_spec_map["ami"].(string)),
-			InstanceType: aws.String(user_spec_map["instance_type"].(string)),
-			KernelId:     aws.String(user_spec_map["kernel_id"].(string)),
-			KeyName:      aws.String(user_spec_map["key_name"].(string)),
+			BlockDeviceMappings: instanceOpts.BlockDeviceMappings,
+			EbsOptimized:        instanceOpts.EBSOptimized,
+			IamInstanceProfile:  instanceOpts.IAMInstanceProfile,
+			ImageId:             instanceOpts.ImageID,
+			InstanceType:        instanceOpts.InstanceType,
+			KeyName:             instanceOpts.KeyName,
 			Monitoring: &ec2.SpotFleetMonitoring{
 				Enabled: aws.Bool(user_spec_map["monitoring"].(bool)),
 			},
-			// TODO: Yuck
-			NetworkInterfaces: aws.String(user_spec_map["network_interfaces"].(string)),
-			Placement: &ec2.SpotPlacement{
-				AvailabilityZone: aws.String(user_spec_map["availability_zone"].(string)),
-			},
-			RamdiskId: aws.String(user_spec_map["ram_disk_id"].(string)),
-			// TODO: Yuck
-			SecurityGroups: aws.String(user_spec_map["security_groups"].(string)),
-			SpotPrice:      aws.String(user_spec_map["spot_price"].(string)),
-			SubnetId:       aws.String(user_spec_map["subnet_id"].(string)),
-			UserData:       aws.String(user_spec_map["user_data"].(string)),
+			NetworkInterfaces: instanceOpts.NetworkInterfaces,
+			Placement:         instanceOpts.SpotPlacement,
+			SubnetId:          instanceOpts.SubnetID,
+			UserData:          instanceOpts.UserData64,
+			SpotPrice:         aws.String(user_spec_map["spot_price"].(string)),
 		})
 	}
+
 	return specs, nil
 }
 
@@ -135,10 +334,13 @@ func resourceAwsSpotFleetRequestCreate(d *schema.ResourceData, meta interface{})
 		TargetCapacity:                   aws.Int64(int64(d.Get("target_capacity").(int))),
 		AllocationStrategy:               aws.String(d.Get("allocation_strategy").(string)),
 		ClientToken:                      aws.String(resource.UniqueId()),
-		ExcessCapacityTerminationPolicy:  aws.String(d.Get("excess_capacity_termination_policy").(string)),
 		TerminateInstancesWithExpiration: aws.Bool(d.Get("terminate_instances_with_expiration").(bool)),
 		ValidFrom:                        aws.Time(time.Now()), // TODO: Read time?
 		ValidUntil:                       aws.Time(time.Now()), // TODO: Read time?
+	}
+
+	if v, ok := d.GetOk("excess_capacity_termination_policy"); ok {
+		spotFleetConfig.ExcessCapacityTerminationPolicy = aws.String(v.(string))
 	}
 
 	// http://docs.aws.amazon.com/sdk-for-go/api/service/ec2.html#type-RequestSpotFleetInput
