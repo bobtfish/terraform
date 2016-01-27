@@ -3,6 +3,7 @@ package aws
 import (
 	"bytes"
 	"crypto/sha1"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -285,6 +286,247 @@ func resourceAwsSpotFleetRequest() *schema.Resource {
 	}
 }
 
+type awsSpotFleetInstanceOpts struct {
+	BlockDeviceMappings               []*ec2.BlockDeviceMapping
+	DisableAPITermination             *bool
+	EBSOptimized                      *bool
+	Monitoring                        *ec2.RunInstancesMonitoringEnabled
+	IAMInstanceProfile                *ec2.IamInstanceProfileSpecification
+	ImageID                           *string
+	InstanceInitiatedShutdownBehavior *string
+	InstanceType                      *string
+	KeyName                           *string
+	NetworkInterfaces                 []*ec2.InstanceNetworkInterfaceSpecification
+	Placement                         *ec2.Placement
+	PrivateIPAddress                  *string
+	SecurityGroupIDs                  []*string
+	SecurityGroups                    []*string
+	SpotPlacement                     *ec2.SpotPlacement
+	SubnetID                          *string
+	UserData64                        *string
+}
+
+func buildAwsSpotFleetInstanceOpts(d map[string]interface{}, meta interface{}) (*awsSpotFleetInstanceOpts, error) {
+	conn := meta.(*AWSClient).ec2conn
+
+	opts := &awsSpotFleetInstanceOpts{
+		DisableAPITermination: aws.Bool(d["disable_api_termination"].(bool)),
+		ImageID:               aws.String(d["ami"].(string)),
+		InstanceType:          aws.String(d["instance_type"].(string)),
+	}
+
+	if v, ok := d["ebs_optimized"]; ok {
+		opts.EBSOptimized = aws.Bool(v.(bool))
+	}
+
+	if v := d["instance_initiated_shutdown_behavior"].(string); v != "" {
+		opts.InstanceInitiatedShutdownBehavior = aws.String(v)
+	}
+
+	opts.Monitoring = &ec2.RunInstancesMonitoringEnabled{
+		Enabled: aws.Bool(d["monitoring"].(bool)),
+	}
+
+	opts.IAMInstanceProfile = &ec2.IamInstanceProfileSpecification{
+		Name: aws.String(d["iam_instance_profile"].(string)),
+	}
+
+	opts.UserData64 = aws.String(
+		base64.StdEncoding.EncodeToString([]byte(d["user_data"].(string))))
+
+	// check for non-default Subnet, and cast it to a String
+	subnet, hasSubnet := d["subnet_id"]
+	subnetID := subnet.(string)
+
+	// Placement is used for aws_instance; SpotPlacement is used for
+	// aws_spot_instance_request. They represent the same data. :-|
+	opts.Placement = &ec2.Placement{
+		AvailabilityZone: aws.String(d["availability_zone"].(string)),
+		GroupName:        aws.String(d["placement_group"].(string)),
+	}
+
+	opts.SpotPlacement = &ec2.SpotPlacement{
+		AvailabilityZone: aws.String(d["availability_zone"].(string)),
+		GroupName:        aws.String(d["placement_group"].(string)),
+	}
+
+	if v := d["tenancy"].(string); v != "" {
+		opts.Placement.Tenancy = aws.String(v)
+	}
+
+	associatePublicIPAddress := d["associate_public_ip_address"].(bool)
+
+	var groups []*string
+	if v := d["security_groups"]; v != nil {
+		// Security group names.
+		// For a nondefault VPC, you must use security group IDs instead.
+		// See http://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_RunInstances.html
+		sgs := v.(*schema.Set).List()
+		if len(sgs) > 0 && hasSubnet {
+			log.Printf("[WARN] Deprecated. Attempting to use 'security_groups' within a VPC instance. Use 'vpc_security_group_ids' instead.")
+		}
+		for _, v := range sgs {
+			str := v.(string)
+			groups = append(groups, aws.String(str))
+		}
+	}
+
+	if hasSubnet && associatePublicIPAddress {
+		// If we have a non-default VPC / Subnet specified, we can flag
+		// AssociatePublicIpAddress to get a Public IP assigned. By default these are not provided.
+		// You cannot specify both SubnetId and the NetworkInterface.0.* parameters though, otherwise
+		// you get: Network interfaces and an instance-level subnet ID may not be specified on the same request
+		// You also need to attach Security Groups to the NetworkInterface instead of the instance,
+		// to avoid: Network interfaces and an instance-level security groups may not be specified on
+		// the same request
+		ni := &ec2.InstanceNetworkInterfaceSpecification{
+			AssociatePublicIpAddress: aws.Bool(associatePublicIPAddress),
+			DeviceIndex:              aws.Int64(int64(0)),
+			SubnetId:                 aws.String(subnetID),
+			Groups:                   groups,
+		}
+
+		if v, ok := d["private_ip"]; ok {
+			ni.PrivateIpAddress = aws.String(v.(string))
+		}
+
+		if v := d["vpc_security_group_ids"].(*schema.Set); v.Len() > 0 {
+			for _, v := range v.List() {
+				ni.Groups = append(ni.Groups, aws.String(v.(string)))
+			}
+		}
+
+		opts.NetworkInterfaces = []*ec2.InstanceNetworkInterfaceSpecification{ni}
+	} else {
+		if subnetID != "" {
+			opts.SubnetID = aws.String(subnetID)
+		}
+
+		if v, ok := d["private_ip"]; ok {
+			opts.PrivateIPAddress = aws.String(v.(string))
+		}
+		if opts.SubnetID != nil &&
+			*opts.SubnetID != "" {
+			opts.SecurityGroupIDs = groups
+		} else {
+			opts.SecurityGroups = groups
+		}
+
+		if v := d["vpc_security_group_ids"].(*schema.Set); v.Len() > 0 {
+			for _, v := range v.List() {
+				opts.SecurityGroupIDs = append(opts.SecurityGroupIDs, aws.String(v.(string)))
+			}
+		}
+	}
+
+	if v, ok := d["key_name"]; ok {
+		opts.KeyName = aws.String(v.(string))
+	}
+
+	blockDevices, err := readSpotFleetBlockDeviceMappingsFromConfig(d, conn)
+	if err != nil {
+		return nil, err
+	}
+	if len(blockDevices) > 0 {
+		opts.BlockDeviceMappings = blockDevices
+	}
+
+	return opts, nil
+}
+
+func readSpotFleetBlockDeviceMappingsFromConfig(
+	d map[string]interface{}, conn *ec2.EC2) ([]*ec2.BlockDeviceMapping, error) {
+	blockDevices := make([]*ec2.BlockDeviceMapping, 0)
+
+	if v, ok := d["ebs_block_device"]; ok {
+		vL := v.(*schema.Set).List()
+		for _, v := range vL {
+			bd := v.(map[string]interface{})
+			ebs := &ec2.EbsBlockDevice{
+				DeleteOnTermination: aws.Bool(bd["delete_on_termination"].(bool)),
+			}
+
+			if v, ok := bd["snapshot_id"].(string); ok && v != "" {
+				ebs.SnapshotId = aws.String(v)
+			}
+
+			if v, ok := bd["encrypted"].(bool); ok && v {
+				ebs.Encrypted = aws.Bool(v)
+			}
+
+			if v, ok := bd["volume_size"].(int); ok && v != 0 {
+				ebs.VolumeSize = aws.Int64(int64(v))
+			}
+
+			if v, ok := bd["volume_type"].(string); ok && v != "" {
+				ebs.VolumeType = aws.String(v)
+			}
+
+			if v, ok := bd["iops"].(int); ok && v > 0 {
+				ebs.Iops = aws.Int64(int64(v))
+			}
+
+			blockDevices = append(blockDevices, &ec2.BlockDeviceMapping{
+				DeviceName: aws.String(bd["device_name"].(string)),
+				Ebs:        ebs,
+			})
+		}
+	}
+
+	if v, ok := d["ephemeral_block_device"]; ok {
+		vL := v.(*schema.Set).List()
+		for _, v := range vL {
+			bd := v.(map[string]interface{})
+			blockDevices = append(blockDevices, &ec2.BlockDeviceMapping{
+				DeviceName:  aws.String(bd["device_name"].(string)),
+				VirtualName: aws.String(bd["virtual_name"].(string)),
+			})
+		}
+	}
+
+	if v, ok := d["root_block_device"]; ok {
+		vL := v.(*schema.Set).List()
+		if len(vL) > 1 {
+			return nil, fmt.Errorf("Cannot specify more than one root_block_device.")
+		}
+		for _, v := range vL {
+			bd := v.(map[string]interface{})
+			ebs := &ec2.EbsBlockDevice{
+				DeleteOnTermination: aws.Bool(bd["delete_on_termination"].(bool)),
+			}
+
+			if v, ok := bd["volume_size"].(int); ok && v != 0 {
+				ebs.VolumeSize = aws.Int64(int64(v))
+			}
+
+			if v, ok := bd["volume_type"].(string); ok && v != "" {
+				ebs.VolumeType = aws.String(v)
+			}
+
+			if v, ok := bd["iops"].(int); ok && v > 0 {
+				ebs.Iops = aws.Int64(int64(v))
+			}
+
+			if dn, err := fetchRootDeviceName(d["ami"].(string), conn); err == nil {
+				if dn == nil {
+					return nil, fmt.Errorf(
+						"Expected 1 AMI for ID: %s, got none",
+						d["ami"].(string))
+				}
+
+				blockDevices = append(blockDevices, &ec2.BlockDeviceMapping{
+					DeviceName: dn,
+					Ebs:        ebs,
+				})
+			} else {
+				return nil, err
+			}
+		}
+	}
+
+	return blockDevices, nil
+}
+
 func buildAwsSpotFleetLaunchSpecification(
 	d *schema.ResourceData, meta interface{}) ([]*ec2.SpotFleetLaunchSpecification, error) {
 	specs := []*ec2.SpotFleetLaunchSpecification{}
@@ -292,7 +534,7 @@ func buildAwsSpotFleetLaunchSpecification(
 	for _, user_spec := range user_specs {
 		user_spec_map := user_spec.(map[string]interface{})
 		// panic: interface conversion: interface {} is map[string]interface {}, not *schema.ResourceData
-		instanceOpts, err := buildAwsInstanceOpts(user_spec.(*schema.ResourceData), meta)
+		instanceOpts, err := buildAwsSpotFleetInstanceOpts(user_spec_map, meta)
 		if err != nil {
 			return nil, err
 		}
