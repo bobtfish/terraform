@@ -286,41 +286,17 @@ func resourceAwsSpotFleetRequest() *schema.Resource {
 	}
 }
 
-type awsSpotFleetInstanceOpts struct {
-	BlockDeviceMappings               []*ec2.BlockDeviceMapping
-	DisableAPITermination             *bool
-	EBSOptimized                      *bool
-	Monitoring                        *ec2.RunInstancesMonitoringEnabled
-	IAMInstanceProfile                *ec2.IamInstanceProfileSpecification
-	ImageID                           *string
-	InstanceInitiatedShutdownBehavior *string
-	InstanceType                      *string
-	KeyName                           *string
-	NetworkInterfaces                 []*ec2.InstanceNetworkInterfaceSpecification
-	Placement                         *ec2.Placement
-	PrivateIPAddress                  *string
-	SecurityGroupIDs                  []*string
-	SecurityGroups                    []*string
-	SpotPlacement                     *ec2.SpotPlacement
-	SubnetID                          *string
-	UserData64                        *string
-}
-
-func buildAwsSpotFleetInstanceOpts(d map[string]interface{}, meta interface{}) (*awsSpotFleetInstanceOpts, error) {
+func buildSpotFleetLaunchSpecification(d map[string]interface{}, meta interface{}) (*ec2.SpotFleetLaunchSpecification, error) {
 	conn := meta.(*AWSClient).ec2conn
 
-	opts := &awsSpotFleetInstanceOpts{
-		//DisableAPITermination: aws.Bool(d["disable_api_termination"].(bool)),
+	opts := &ec2.awsSpotFleetLaunchSpecification{
 		ImageID:      aws.String(d["ami"].(string)),
 		InstanceType: aws.String(d["instance_type"].(string)),
+		SpotPrice:    aws.String(user_spec_map["spot_price"].(string)),
 	}
 
 	if v, ok := d["ebs_optimized"]; ok {
-		opts.EBSOptimized = aws.Bool(v.(bool))
-	}
-
-	if v, ok := d["instance_initiated_shutdown_behavior"]; ok {
-		opts.InstanceInitiatedShutdownBehavior = aws.String(v.(string))
+		opts.EbsOptimized = aws.Bool(v.(bool))
 	}
 
 	if v, ok := d["monitoring"]; ok {
@@ -330,13 +306,13 @@ func buildAwsSpotFleetInstanceOpts(d map[string]interface{}, meta interface{}) (
 	}
 
 	if v, ok := d["iam_instance_profile"]; ok {
-		opts.IAMInstanceProfile = &ec2.IamInstanceProfileSpecification{
+		opts.IamInstanceProfile = &ec2.IamInstanceProfileSpecification{
 			Name: aws.String(v.(string)),
 		}
 	}
 
 	if v, ok := d["user_data"]; ok {
-		opts.UserData64 = aws.String(
+		opts.UserData = aws.String(
 			base64.StdEncoding.EncodeToString([]byte(v.(string))))
 	}
 
@@ -526,33 +502,18 @@ func readSpotFleetBlockDeviceMappingsFromConfig(
 	return blockDevices, nil
 }
 
-func buildAwsSpotFleetLaunchSpecification(
+func buildAwsSpotFleetLaunchSpecifications(
 	d *schema.ResourceData, meta interface{}) ([]*ec2.SpotFleetLaunchSpecification, error) {
 	specs := []*ec2.SpotFleetLaunchSpecification{}
 	user_specs := d.Get("launch_specification").(*schema.Set).List()
 	for _, user_spec := range user_specs {
 		user_spec_map := user_spec.(map[string]interface{})
 		// panic: interface conversion: interface {} is map[string]interface {}, not *schema.ResourceData
-		instanceOpts, err := buildAwsSpotFleetInstanceOpts(user_spec_map, meta)
+		opts, err := buildAwsSpotFleetLaunchSpecification(user_spec_map, meta)
 		if err != nil {
 			return nil, err
 		}
-		specs = append(specs, &ec2.SpotFleetLaunchSpecification{
-			BlockDeviceMappings: instanceOpts.BlockDeviceMappings,
-			EbsOptimized:        instanceOpts.EBSOptimized,
-			IamInstanceProfile:  instanceOpts.IAMInstanceProfile,
-			ImageId:             instanceOpts.ImageID,
-			InstanceType:        instanceOpts.InstanceType,
-			KeyName:             instanceOpts.KeyName,
-			Monitoring: &ec2.SpotFleetMonitoring{
-				Enabled: aws.Bool(user_spec_map["monitoring"].(bool)),
-			},
-			NetworkInterfaces: instanceOpts.NetworkInterfaces,
-			Placement:         instanceOpts.SpotPlacement,
-			SubnetId:          instanceOpts.SubnetID,
-			UserData:          instanceOpts.UserData64,
-			SpotPrice:         aws.String(user_spec_map["spot_price"].(string)),
-		})
+		specs = append(specs, opts)
 	}
 
 	return specs, nil
